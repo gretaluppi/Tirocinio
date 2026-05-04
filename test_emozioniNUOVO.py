@@ -3,84 +3,112 @@ import mediapipe as mp
 import time
 import csv
 import os
+import math
 
 # ==========================================
-# CLASSE RILEVATORE EMOZIONI
+# CLASSE RILEVATORE EMOZIONI + POSTURA
 # ==========================================
 
-class RilevatoreEmozioni:
+class RilevatoreEmozioniPostura:
 
     def __init__(self):
 
-        # Nuova API Mediapipe (Tasks)
         BaseOptions = mp.tasks.BaseOptions
-        FaceLandmarker = mp.tasks.vision.FaceLandmarker
-        FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
         VisionRunningMode = mp.tasks.vision.RunningMode
 
-        # Carica il modello FaceLandmarker
-        self.options = FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path="face_landmarker.task"),
-            running_mode=VisionRunningMode.IMAGE,
-            num_faces=1
+        # ---------------------------
+        # FACE LANDMARKER
+        # ---------------------------
+        FaceLandmarker = mp.tasks.vision.FaceLandmarker
+        FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+
+        self.face_landmarker = FaceLandmarker.create_from_options(
+            FaceLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path="face_landmarker.task"),
+                running_mode=VisionRunningMode.IMAGE,
+                num_faces=1
+            )
         )
 
-        # Crea il rilevatore
-        self.landmarker = FaceLandmarker.create_from_options(self.options)
+        # ---------------------------
+        # POSE LANDMARKER
+        # ---------------------------
+        PoseLandmarker = mp.tasks.vision.PoseLandmarker
+        PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
 
-        # File CSV
-        self.file_csv = "dataset_emozioni.csv"
+        self.pose_landmarker = PoseLandmarker.create_from_options(
+            PoseLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path="pose_landmarker_lite.task"),
+                running_mode=VisionRunningMode.IMAGE
+            )
+        )
+
+        # ---------------------------
+        # CSV
+        # ---------------------------
+        self.file_csv = "dataset_emozioni_postura.csv"
         self.inizializza_csv()
 
     # --------------------------------------
-    # CREA FILE CSV PER SALVARE I DATI
+    # CREA FILE CSV
     # --------------------------------------
 
     def inizializza_csv(self):
 
         file_esiste = os.path.isfile(self.file_csv)
 
-        with open(self.file_csv, mode='a', newline='') as file:
-            writer = csv.writer(file)
-
+        with open(self.file_csv, mode='a', newline='') as f:
+            w = csv.writer(f)
             if not file_esiste:
-                writer.writerow([
+                w.writerow([
                     "timestamp",
+                    "emozione",
                     "punteggio_sorriso_0_100",
                     "apertura_bocca",
                     "occhio_sx",
                     "occhio_dx",
-                    "emozione"
+                    "inclinazione_busto",
+                    "inclinazione_testa",
+                    "postura_chiusura",
+                    "postura_label",
+                    "emozione_postura_combinata"
                 ])
 
     # --------------------------------------
-    # SALVA RIGA NEL CSV
+    # SALVA RIGA CSV
     # --------------------------------------
 
-    def salva_dati(self, punteggio, apertura, occhio_sx, occhio_dx, emozione):
+    def salva_dati(self, emozione, punteggio, apertura, occhio_sx, occhio_dx,
+                   inclinazione_busto, inclinazione_testa, postura_chiusura,
+                   postura_label, emozione_postura):
 
         timestamp = time.strftime("%H:%M:%S")
 
-        with open(self.file_csv, mode='a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow([
+        with open(self.file_csv, mode='a', newline='') as f:
+            w = csv.writer(f)
+            w.writerow([
                 timestamp,
+                emozione,
                 round(punteggio, 2),
                 round(apertura, 4),
                 round(occhio_sx, 4),
                 round(occhio_dx, 4),
-                emozione
+                round(inclinazione_busto, 4),
+                round(inclinazione_testa, 4),
+                round(postura_chiusura, 4),
+                postura_label,
+                emozione_postura
             ])
 
     # --------------------------------------
-    # CALCOLO SORRISO (NORMALIZZATO 0-100)
+    # CALCOLO SORRISO (COME IL TUO)
     # --------------------------------------
 
-    def calcola_sorriso(self, landmarks):
+    def calcola_sorriso(self, lm):
 
-        centro_y = landmarks[13].y
-        angolo_sx_y = landmarks[61].y
-        angolo_dx_y = landmarks[291].y
+        centro_y = lm[13].y
+        angolo_sx_y = lm[61].y
+        angolo_dx_y = lm[291].y
 
         diff_sx = centro_y - angolo_sx_y
         diff_dx = centro_y - angolo_dx_y
@@ -92,11 +120,11 @@ class RilevatoreEmozioni:
 
         punteggio_grezzo += (diff_sx + diff_dx) * 1000
 
-        larghezza = abs(landmarks[291].x - landmarks[61].x)
+        larghezza = abs(lm[291].x - lm[61].x)
         if larghezza > 0.15:
             punteggio_grezzo += 15
 
-        apertura = abs(landmarks[14].y - landmarks[13].y)
+        apertura = abs(lm[14].y - lm[13].y)
         if apertura < 0.02:
             punteggio_grezzo += 10
 
@@ -109,38 +137,139 @@ class RilevatoreEmozioni:
     # ANALISI ESPRESSIONE
     # --------------------------------------
 
-    def analizza(self, landmarks):
+    def analizza_emozione(self, lm):
 
-        punteggio = self.calcola_sorriso(landmarks)
+        punteggio = self.calcola_sorriso(lm)
 
-        apertura = abs(landmarks[14].y - landmarks[13].y)
-        occhio_sx = abs(landmarks[145].y - landmarks[159].y)
-        occhio_dx = abs(landmarks[374].y - landmarks[386].y)
+        apertura = abs(lm[14].y - lm[13].y)
+        occhio_sx = abs(lm[145].y - lm[159].y)
+        occhio_dx = abs(lm[374].y - lm[386].y)
 
         if apertura > 0.045:
             emozione = "SORPRESO"
-
         elif punteggio > 75:
             emozione = "MOLTO FELICE"
-
         elif punteggio > 55:
             emozione = "FELICE"
-
         elif punteggio < 40:
             emozione = "ARRABBIATO"
-
         else:
             emozione = "NEUTRO"
 
         return emozione, punteggio, apertura, occhio_sx, occhio_dx
 
     # --------------------------------------
-    # AVVIO RILEVATORE
+    # ANALISI POSTURA
+    # --------------------------------------
+
+    def analizza_postura(self, pose_landmarks):
+
+        lm = pose_landmarks  # lista di 33 landmark
+
+        if len(lm) < 25:
+            return 0.0, 0.0, 0.0, "POSTURA_NON_RILEVATA"
+
+        # inclinazione busto (spalle)
+        sx = lm[11]
+        dx = lm[12]
+        inclinazione_busto = math.degrees(
+            math.atan2(dx.y - sx.y, dx.x - sx.x)
+        )
+
+        # inclinazione testa (orecchie)
+        orecchio_sx = lm[7]
+        orecchio_dx = lm[8]
+        inclinazione_testa = math.degrees(
+            math.atan2(orecchio_dx.y - orecchio_sx.y,
+                       orecchio_dx.x - orecchio_sx.x)
+        )
+
+        # postura chiusa (spalla-anca)
+        spalla_sx = lm[11]
+        anca_sx = lm[23]
+        spalla_dx = lm[12]
+        anca_dx = lm[24]
+
+        dist_sx = abs(spalla_sx.y - anca_sx.y)
+        dist_dx = abs(spalla_dx.y - anca_dx.y)
+        postura_chiusura = (dist_sx + dist_dx) / 2
+
+        # classificazione postura
+        if postura_chiusura < 0.18:
+            postura_label = "CHIUSA"
+        elif postura_chiusura > 0.26:
+            postura_label = "APERTA"
+        else:
+            postura_label = "NEUTRA"
+
+        return inclinazione_busto, inclinazione_testa, postura_chiusura, postura_label
+
+    # --------------------------------------
+    # COMBINAZIONE EMOZIONE + POSTURA
+    # --------------------------------------
+
+    def combina_emozione_postura(self, emozione, postura_label):
+
+        if postura_label == "POSTURA_NON_RILEVATA":
+            return emozione + " (postura non rilevata)"
+
+        if emozione in ["FELICE", "MOLTO FELICE"] and postura_label == "APERTA":
+            return "FELICE E APERTO"
+
+        if emozione == "ARRABBIATO" and postura_label == "CHIUSA":
+            return "ARRABBIATO E CHIUSO"
+
+        if emozione == "NEUTRO" and postura_label == "CHIUSA":
+            return "NEUTRO MA CHIUSO"
+
+        if emozione == "NEUTRO" and postura_label == "APERTA":
+            return "NEUTRO MA APERTO"
+
+        return emozione + " + POSTURA " + postura_label
+
+    # --------------------------------------
+    # DISEGNO LANDMARK VOLTO
+    # --------------------------------------
+
+    def disegna_face_landmarks(self, frame, lm):
+
+        h, w, _ = frame.shape
+        for p in lm:
+            x = int(p.x * w)
+            y = int(p.y * h)
+            cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
+
+    # --------------------------------------
+    # DISEGNO LANDMARK POSTURA
+    # --------------------------------------
+
+    def disegna_pose_landmarks(self, frame, lm):
+
+        h, w, _ = frame.shape
+
+        def pt(i):
+            return int(lm[i].x * w), int(lm[i].y * h)
+
+        # punti principali
+        for i in [11, 12, 23, 24, 7, 8]:
+            x, y = pt(i)
+            cv2.circle(frame, (x, y), 3, (255, 255, 0), -1)
+
+        # spalle
+        cv2.line(frame, pt(11), pt(12), (255, 255, 0), 2)
+        # busto
+        cv2.line(frame, pt(11), pt(23), (255, 255, 0), 2)
+        cv2.line(frame, pt(12), pt(24), (255, 255, 0), 2)
+        # testa
+        cv2.line(frame, pt(7), pt(8), (255, 255, 0), 2)
+
+    # --------------------------------------
+    # AVVIO
     # --------------------------------------
 
     def avvia(self):
 
-        print("\n🎭 RILEVATORE EMOZIONI + DATASET")
+        print("\n🎭 RILEVATORE EMOZIONI + POSTURA")
         print("Premi 'q' per uscire\n")
 
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -159,48 +288,66 @@ class RilevatoreEmozioni:
                 if not ret:
                     break
 
-                # Converti in formato Mediapipe
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
                 mp_image = mp.Image(
                     image_format=mp.ImageFormat.SRGB,
-                    data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    data=rgb
                 )
 
-                # Rilevamento volto
-                results = self.landmarker.detect(mp_image)
+                face_results = self.face_landmarker.detect(mp_image)
+                pose_results = self.pose_landmarker.detect(mp_image)
 
-                if results.face_landmarks:
-                    for face in results.face_landmarks:
+                emozione = "NON_RILEVATA"
+                punteggio = apertura = occhio_sx = occhio_dx = 0.0
+                inclinazione_busto = inclinazione_testa = postura_chiusura = 0.0
+                postura_label = "POSTURA_NON_RILEVATA"
 
-                        landmarks = face  # lista dei 468 punti
+                # volto
+                if face_results.face_landmarks:
+                    lm_face = face_results.face_landmarks[0]
+                    emozione, punteggio, apertura, occhio_sx, occhio_dx = \
+                        self.analizza_emozione(lm_face)
+                    self.disegna_face_landmarks(frame, lm_face)
 
-                        emozione, punteggio, apertura, occhio_sx, occhio_dx = \
-                            self.analizza(landmarks)
+                # postura
+                if pose_results.pose_landmarks:
+                    lm_pose = pose_results.pose_landmarks[0]
+                    inclinazione_busto, inclinazione_testa, postura_chiusura, postura_label = \
+                        self.analizza_postura(lm_pose)
+                    self.disegna_pose_landmarks(frame, lm_pose)
 
-                        self.salva_dati(
-                            punteggio,
-                            apertura,
-                            occhio_sx,
-                            occhio_dx,
-                            emozione
-                        )
+                emozione_postura = self.combina_emozione_postura(emozione, postura_label)
 
-                        cv2.putText(frame,
-                                    f"EMOZIONE: {emozione}",
-                                    (30, 50),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    1,
-                                    (0, 255, 0),
-                                    3)
+                # salva solo se almeno il volto è stato rilevato
+                if emozione != "NON_RILEVATA":
+                    self.salva_dati(
+                        emozione,
+                        punteggio,
+                        apertura,
+                        occhio_sx,
+                        occhio_dx,
+                        inclinazione_busto,
+                        inclinazione_testa,
+                        postura_chiusura,
+                        postura_label,
+                        emozione_postura
+                    )
 
-                        cv2.putText(frame,
-                                    f"Sorriso (0-100): {punteggio:.1f}",
-                                    (30, 100),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.6,
-                                    (255, 255, 255),
-                                    2)
+                # overlay testo
+                cv2.putText(frame, f"EMOZIONE: {emozione}", (30, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-                cv2.imshow("Emotion Dataset Recorder", frame)
+                cv2.putText(frame, f"Sorriso: {punteggio:.1f}", (30, 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+                cv2.putText(frame, f"Postura: {postura_label}", (30, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+
+                cv2.putText(frame, f"Combinata: {emozione_postura}", (30, 130),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
+
+                cv2.imshow("Emotion + Posture Recorder", frame)
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
@@ -216,12 +363,11 @@ class RilevatoreEmozioni:
 # ==========================================
 
 def main():
-
     print("=" * 60)
-    print("🤖 SISTEMA RILEVAMENTO EMOZIONI + DATASET")
+    print("🤖 SISTEMA RILEVAMENTO EMOZIONI + POSTURA")
     print("=" * 60)
 
-    rilevatore = RilevatoreEmozioni()
+    rilevatore = RilevatoreEmozioniPostura()
     rilevatore.avvia()
 
 
