@@ -1,36 +1,33 @@
-import cv2
-import mediapipe as mp
-import time
-import csv
-import os
-
+import cv2 #libreria per elaborare video e immagini
+import mediapipe as mp # Google's AI library per riconoscimento volti
+import time #Per ottenere l'ora attuale
+import csv # Per salvare dati in file CSV
+import os # Per controllare se i file esistono
 # ==========================================
 # CLASSE RILEVATORE EMOZIONI
 # ==========================================
-
 class RilevatoreEmozioni:
+    def __init__(self): #creo un'istanza della classe
 
-    def __init__(self):
+        # Nuova API Mediapipe (Tasks), importa le componenti di mediapipe necessarie 
+        BaseOptions = mp.tasks.BaseOptions #importo le opzioni base
+        FaceLandmarker = mp.tasks.vision.FaceLandmarker #importo il modello che rileva il volto
+        FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions #importo le opzioni per configurare il modello
+        VisionRunningMode = mp.tasks.vision.RunningMode # modalità di esacuzione
 
-        # Nuova API Mediapipe (Tasks)
-        BaseOptions = mp.tasks.BaseOptions
-        FaceLandmarker = mp.tasks.vision.FaceLandmarker
-        FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-        VisionRunningMode = mp.tasks.vision.RunningMode
-
-        # Carica il modello FaceLandmarker
-        self.options = FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path="face_landmarker.task"),
-            running_mode=VisionRunningMode.IMAGE,
-            num_faces=1
+        # Configuro il modello FaceLandmarker: devo inserire le istruzione di configurazione, le istruzioni per l'esecuzione e il numero di facce da analizzare per volta
+        self.options = FaceLandmarkerOptions( # self.option è un oggetto che conserva tutte le informazioni per la configurazione del modello
+            base_options=BaseOptions(model_asset_path="face_landmarker.task"), # passo le informazioni, uso un modello Ai già allenato
+            running_mode=VisionRunningMode.IMAGE, # ho due opzioni di processari i dati forniti dalla webcam: VisionRunningMode.IMAGE che processa frame per frame e VisionRunningMode.VIDEO che processa video in modo continuo
+            num_faces=1 #dico che i volti da rilevare è 1
         )
 
         # Crea il rilevatore
-        self.landmarker = FaceLandmarker.create_from_options(self.options)
+        self.landmarker = FaceLandmarker.create_from_options(self.options) #con questa funzione creo un FaceLandamrker usante il pacchetto di istruzioni creato prima
 
         # File CSV
-        self.file_csv = "dataset_emozioni.csv"
-        self.inizializza_csv()
+        self.file_csv = "dataset_emozioni.csv" # salvo su una variabile il nome del file su cui inserire i dati 
+        self.inizializza_csv() #questa funzione inizializza un file csv se non è già presente
 
     # --------------------------------------
     # CREA FILE CSV PER SALVARE I DATI
