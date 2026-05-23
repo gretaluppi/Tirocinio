@@ -1,18 +1,19 @@
-import csv
-import os
-import time
-from collections import deque
-import cv2
-import mediapipe as mp
+import csv #legge/scrive i file csv
+import os #lavora con file e cartelle
+import time #gestisce tempo e timestamp
+from collections import deque #usa una lista speciale molto veloce per stabilizzare le emozioni
+import cv2 #webcam e grafica
+import mediapipe as mp #usa AI tracking con face e pose landmarker
 
-FACE_MODEL_PATH = r"C:\Users\Greta\Desktop\Tirocinio\face_landmarker.task"
-POSE_MODEL_PATH = r"C:\Users\Greta\Desktop\Tirocinio\pose_landmarker_full.task"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FACE_MODEL_PATH = os.path.join(BASE_DIR, "face_landmarker.task")
+POSE_MODEL_PATH = os.path.join(BASE_DIR, "pose_landmarker_full.task")
 
-def inizializza_stato():
+def inizializza_stato(): #funzione che crea un dizionario con tutte le variabili globali del sistema
     return {
         "codice_persona": None,
         "file_csv": None,
-        "storia_emozioni": deque(maxlen=10),
+        "storia_emozioni": deque(maxlen=10), #tiene memoria delle ultime emozioni
         "punteggio_smussato": None,
         "apertura_smussata": None,
         "occhio_sx_smussato": None,
@@ -23,11 +24,11 @@ def inizializza_stato():
         "ultima_emozione_stabile": "NEUTRO",
         "ultimo_stato_posturale": "POSTURA NEUTRA",
         "ultimo_salvataggio": 0.0,
-        "intervallo_salvataggio": 0.5,
+        "intervallo_salvataggio": 0.5, #servono a NON salvare ogni frame
     }
 
 
-def verifica_modelli(face_model_path, pose_model_path):
+def verifica_modelli(face_model_path, pose_model_path): #funzione che verifica che i file .task dei modelli esistano davvero
     modelli_mancanti = []
     if not os.path.exists(face_model_path):
         modelli_mancanti.append(face_model_path)
@@ -36,9 +37,9 @@ def verifica_modelli(face_model_path, pose_model_path):
 
     if modelli_mancanti:
         raise FileNotFoundError("Modelli mancanti:\n" + "\n".join(modelli_mancanti))
+#se i file non esistono la funzione genera un errore
 
-
-def crea_face_landmarker(face_model_path):
+def crea_face_landmarker(face_model_path): #questa funzione crea i face landmarker e inizializza MediaPipe
     BaseOptions = mp.tasks.BaseOptions
     FaceLandmarker = mp.tasks.vision.FaceLandmarker
     FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
@@ -46,14 +47,14 @@ def crea_face_landmarker(face_model_path):
 
     options = FaceLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=face_model_path),
-        running_mode=RunningMode.VIDEO,
+        running_mode=RunningMode.VIDEO, # i frame arrivano continuamente
         num_faces=1,
-        output_face_blendshapes=True,
+        output_face_blendshapes=True, #serve per ottenere parametri facciali
     )
     return FaceLandmarker.create_from_options(options)
 
 
-def crea_pose_landmarker(pose_model_path):
+def crea_pose_landmarker(pose_model_path): #idem per il corpo
     BaseOptions = mp.tasks.BaseOptions
     PoseLandmarker = mp.tasks.vision.PoseLandmarker
     PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
@@ -63,7 +64,7 @@ def crea_pose_landmarker(pose_model_path):
         base_options=BaseOptions(model_asset_path=pose_model_path),
         running_mode=RunningMode.VIDEO,
         num_poses=1,
-        min_pose_detection_confidence=0.5,
+        min_pose_detection_confidence=0.5, #accetta il rilevamento solo se AI è al 50% sicura
         min_pose_presence_confidence=0.5,
         min_tracking_confidence=0.5,
     )
@@ -71,15 +72,15 @@ def crea_pose_landmarker(pose_model_path):
 
 
 def acquisisci_codice_persona_da_camera(cap):
-    codice = ""
+    codice = "" 
 
     while True:
-        ret, frame = cap.read()
+        ret, frame = cap.read() #ret restituisce un True/False. frame un'immagine webcam
         if not ret:
             return None
 
-        frame = cv2.flip(frame, 1)
-        overlay = frame.copy()
+        frame = cv2.flip(frame, 1) 
+        overlay = frame.copy() #copia il frame e disegna dei pannelli trasparenti
         cv2.rectangle(overlay, (35, 35), (605, 215), (15, 18, 30), -1)
         cv2.rectangle(overlay, (35, 35), (605, 215), (0, 215, 255), 2)
         cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
@@ -130,19 +131,19 @@ def acquisisci_codice_persona_da_camera(cap):
 
         cv2.imshow("Emotion Dataset Recorder", frame)
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == 27:
+        key = cv2.waitKey(1) & 0xFF #legge il tasto premuto
+        if key == 27: #27 = ESC
             return None
-        if key in (13, 10):
+        if key in (13, 10): 
             if codice.strip():
                 return codice.strip()
-        elif key == 8:
+        elif key == 8: #backspace
             codice = codice[:-1]
         elif 32 <= key <= 126 and len(codice) < 20:
-            codice += chr(key)
+            codice += chr(key) #trasforma codice ASCII in carattere
 
 
-def prepara_file_csv(nome_file):
+def prepara_file_csv(nome_file): #controlla che il CSV abbia intestazione corretta
     intestazione_attesa = [
         "timestamp",
         "codice_persona",
@@ -235,9 +236,9 @@ def smussa_valore(valore_corrente, valore_precedente, alpha=0.2):
     if valore_precedente is None:
         return valore_corrente
     return (alpha * valore_corrente) + ((1 - alpha) * valore_precedente)
+#fa una media esponenziale che evita oscillazioni
 
-
-def calcola_sorriso(landmarks):
+def calcola_sorriso(landmarks): #calcola il sorriso con la geometria facciale
     centro_y = landmarks[13].y
     angolo_sx_y = landmarks[61].y
     angolo_dx_y = landmarks[291].y
@@ -263,9 +264,9 @@ def calcola_sorriso(landmarks):
     return max(0, min(100, punteggio_normalizzato))
 
 
-def stabilizza_metriche(landmarks, stato):
+def stabilizza_metriche(landmarks, stato): #questa funzione calcola sorriso, apertura bocca e occhi e applica smoothing
     punteggio = calcola_sorriso(landmarks)
-    apertura = abs(landmarks[14].y - landmarks[13].y)
+    apertura = abs(landmarks[14].y - landmarks[13].y) #distanza verticale di apertura della bocca
     occhio_sx = abs(landmarks[145].y - landmarks[159].y)
     occhio_dx = abs(landmarks[374].y - landmarks[386].y)
 
@@ -284,18 +285,18 @@ def stabilizza_metriche(landmarks, stato):
 
 def analizza_postura(pose_landmarks, stato):
     spalla_sx = pose_landmarks[11]
-    spalla_dx = pose_landmarks[12]
+    spalla_dx = pose_landmarks[12]# 11 e 12 sono le spalle
     anca_sx = pose_landmarks[23]
-    anca_dx = pose_landmarks[24]
+    anca_dx = pose_landmarks[24] #23 e 24 sono le anche
     naso = pose_landmarks[0]
 
     centro_spalle_x = (spalla_sx.x + spalla_dx.x) / 2
     centro_spalle_y = (spalla_sx.y + spalla_dx.y) / 2
     centro_anche_x = (anca_sx.x + anca_dx.x) / 2
 
-    apertura_spalle = abs(spalla_dx.x - spalla_sx.x)
-    inclinazione_spalle = abs(spalla_dx.y - spalla_sx.y)
-    inclinazione_busto = abs(centro_spalle_x - centro_anche_x)
+    apertura_spalle = abs(spalla_dx.x - spalla_sx.x) #apertura spalle
+    inclinazione_spalle = abs(spalla_dx.y - spalla_sx.y) #inclinazione spalle (valuta se una è più alta)
+    inclinazione_busto = abs(centro_spalle_x - centro_anche_x) #confronta centro spalle e centro anche
     testa_avanti = max(0.0, naso.y - centro_spalle_y)
 
     stato["apertura_spalle_smussata"] = smussa_valore(
@@ -383,7 +384,7 @@ def analizza_emozione(landmarks, stato, pose_info=None):
     )
 
 
-def colore_emozione(emozione):
+def colore_emozione(emozione): #con un dizionario associa a un'emozione il suo colore
     colori = {
         "MOLTO FELICE": (0, 215, 255),
         "FELICE": (80, 200, 120),
@@ -395,7 +396,7 @@ def colore_emozione(emozione):
     }
     return colori.get(emozione, (255, 255, 255))
 
-
+#questa funzione crea tutta la UI (user interface)
 def disegna_pannello(frame, emozione, punteggio, apertura, stato_posturale, stato):
     overlay = frame.copy()
     colore = colore_emozione(emozione)
@@ -489,7 +490,7 @@ def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato):
     print("Codice persona:", stato["codice_persona"])
     print("Salvataggio dati in:", stato["file_csv"])
 
-    try:
+    try: #esegue il codice
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -560,13 +561,13 @@ def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato):
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q") or key == 27:
                 break
-    finally:
-        cap.release()
+    finally: #questa part eviene sempre eseguita. serve a liberare la webcam
+        cap.release() 
         cv2.destroyAllWindows()
         print("Programma terminato")
 
 
-def main():
+def main(): #funzione principale
     print("=" * 60)
     print("SISTEMA RILEVAMENTO EMOZIONI + DATASET")
     print("=" * 60)

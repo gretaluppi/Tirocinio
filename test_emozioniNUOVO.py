@@ -1,17 +1,18 @@
-import cv2
-import mediapipe as mp
-import time
-import csv
-import os
-import math
+import cv2 #importa OpenCV, che serve per usare webcam, immagini e video
+import mediapipe as mp #importa MediaPipe per riconoscere landmark fdi volto e postura
+import time #gestione del tempo per i timestamp
+import csv #salva i dati in un csv
+import os #lavora con file /cartelle
+import math #fa calcoli matematici con distanze, radici e angoli
 
 # ==========================================
 # CLASSE RILEVATORE EMOZIONI + POSTURA
 # ==========================================
 
-class RilevatoreEmozioniPostura:
+class RilevatoreEmozioniPostura: #si crea un contenitore (la classe) che raccoglie variabili
+    #interne, modelli MediaPipe, funzioni per analizzare volto/postura, soglie, ecc
 
-    def __init__(self):
+    def __init__(self): #prima funzione che viene sempre eseguita quando si lancia la classe
 
         BaseOptions = mp.tasks.BaseOptions
         VisionRunningMode = mp.tasks.vision.RunningMode
@@ -19,7 +20,8 @@ class RilevatoreEmozioniPostura:
         # ---------------------------
         # FACE LANDMARKER
         # ---------------------------
-        FaceLandmarker = mp.tasks.vision.FaceLandmarker
+        FaceLandmarker = mp.tasks.vision.FaceLandmarker 
+        #
         FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
 
         self.face_landmarker = FaceLandmarker.create_from_options(
