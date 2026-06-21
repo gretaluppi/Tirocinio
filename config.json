@@ -1,0 +1,29 @@
+{
+    "one_euro_filter": {
+        "min_cutoff": 1.0,
+        "beta": 0.007,
+        "d_cutoff": 1.0
+    },
+    "isteresi": {
+        "durata_minima": 0.3
+    },
+    "salvataggio": {
+        "intervallo": 0.5
+    },
+    "soglie_emozioni": {
+        "molto_felice": 70,
+        "felice": 45,
+        "arrabbiato_sorriso": 20,
+        "arrabbiato_sopracciglia": 0.35,
+        "sorpreso_apertura": 0.4,
+        "sorpreso_sopracciglia": 0.3
+    },
+    "soglie_postura": {
+        "apertura_spalle_chiusa": 0.18,
+        "inclinazione_busto_chiusa": 0.035,
+        "testa_avanti_chiusa": 0.12,
+        "apertura_spalle_aperta": 0.24,
+        "inclinazione_spalle_aperta": 0.025,
+        "inclinazione_busto_aperta": 0.03
+    }
+}
