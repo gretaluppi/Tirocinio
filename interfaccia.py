@@ -56,13 +56,14 @@ def acquisisci_codice_persona_da_camera(cap):
             codice += chr(key)
 
 
-def disegna_pannello(frame, emozione, punteggio, apertura, stato_posturale, stato):
+def disegna_pannello(frame, emozione, punteggio, apertura, stato_posturale, stato,
+                     valence=0.0, arousal=0.0, attenzione=False):
     overlay = frame.copy()
     colore = colore_emozione(emozione)
     h, w, _ = frame.shape
 
-    cv2.rectangle(overlay, (18, 18), (320, 148), (15, 18, 30), -1)
-    cv2.rectangle(overlay, (18, 18), (320, 148), colore, 2)
+    cv2.rectangle(overlay, (18, 18), (360, 178), (15, 18, 30), -1)
+    cv2.rectangle(overlay, (18, 18), (360, 178), colore, 2)
     cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
 
     cv2.putText(frame, "EMOTIONAL MIRRORING", (30, 42),
@@ -84,6 +85,11 @@ def disegna_pannello(frame, emozione, punteggio, apertura, stato_posturale, stat
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (205, 205, 205), 1, cv2.LINE_AA)
     cv2.putText(frame, stato_posturale, (30, 135),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.46, (215, 215, 215), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"V {valence:+.2f}  A {arousal:.2f}", (30, 160),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (215, 215, 215), 1, cv2.LINE_AA)
+    attenzione_testo = "ATTENTO" if attenzione else "SGUARDO NON CENTRATO"
+    cv2.putText(frame, attenzione_testo, (145, 160),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (205, 205, 205), 1, cv2.LINE_AA)
     cv2.putText(frame, f"ID {stato['codice_persona']}", (215, 42),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.42, (210, 210, 210), 1, cv2.LINE_AA)
     cv2.putText(frame, "Q/ESC esci | D debug blendshapes", (w - 370, h - 20),

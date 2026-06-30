@@ -12,6 +12,7 @@ from analisi import (
     estrai_blendshapes,
     classifica_emozione,
     analizza_postura,
+    analizza_postura_3d,
 )
 from interfaccia import (
     acquisisci_codice_persona_da_camera,
@@ -29,7 +30,8 @@ INTESTAZIONE_CSV = [
     "punteggio_sorriso_0_100", "apertura_bocca",
     "occhio_sx", "occhio_dx",
     "apertura_spalle", "inclinazione_spalle", "inclinazione_busto",
-    "stato_posturale", "emozione",
+    "stato_posturale", "valence", "arousal",
+    "head_yaw", "head_pitch", "attenzione_schermo", "emozione",
 ]
 
 
@@ -103,19 +105,24 @@ def crea_pose_landmarker(pose_model_path):
 # --- CSV ---
 
 def prepara_file_csv(nome_file):
-    if not os.path.isfile(nome_file):
+    def intestazione_compatibile(path):
+        if not os.path.isfile(path):
+            return True
+        with open(path, mode="r", newline="", encoding="utf-8") as file:
+            reader = csv.reader(file)
+            return next(reader, []) == INTESTAZIONE_CSV
+
+    if intestazione_compatibile(nome_file):
         return nome_file
 
-    with open(nome_file, mode="r", newline="", encoding="utf-8") as file:
-        reader = csv.reader(file)
-        intestazione_corrente = next(reader, [])
+    base, estensione = os.path.splitext(nome_file)
+    for indice in range(2, 100):
+        candidato = f"{base}_v{indice}{estensione}"
+        if intestazione_compatibile(candidato):
+            print(f"CSV esistente con struttura diversa. Nuovi dati in: {candidato}")
+            return candidato
 
-    if intestazione_corrente == INTESTAZIONE_CSV:
-        return nome_file
-
-    nuovo_file = "dataset_emozioni_con_codice.csv"
-    print(f"CSV esistente con struttura diversa. Nuovi dati in: {nuovo_file}")
-    return nuovo_file
+    raise RuntimeError("Impossibile trovare un nome CSV compatibile.")
 
 
 def inizializza_csv(file_csv):
@@ -126,7 +133,8 @@ def inizializza_csv(file_csv):
 
 def salva_dati_csv(file_csv, stato, punteggio, apertura, occhio_sx, occhio_dx,
                    apertura_spalle, inclinazione_spalle, inclinazione_busto,
-                   stato_posturale, emozione):
+                   stato_posturale, valence, arousal, head_yaw, head_pitch,
+                   attenzione, emozione):
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
 
     with open(file_csv, mode="a", newline="", encoding="utf-8") as file:
@@ -136,7 +144,9 @@ def salva_dati_csv(file_csv, stato, punteggio, apertura, occhio_sx, occhio_dx,
             round(occhio_sx, 4), round(occhio_dx, 4),
             round(apertura_spalle, 4), round(inclinazione_spalle, 4),
             round(inclinazione_busto, 4),
-            stato_posturale, emozione,
+            stato_posturale, round(valence, 4), round(arousal, 4),
+            round(head_yaw, 4), round(head_pitch, 4),
+            int(bool(attenzione)), emozione,
         ])
 
 
@@ -174,9 +184,21 @@ def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config):
             inclinazione_spalle = 0.0
             inclinazione_busto = 0.0
             stato_posturale = stato["ultimo_stato_posturale"]
+            valence = 0.0
+            arousal = 0.0
+            head_yaw = 0.0
+            head_pitch = 0.0
+            attenzione = False
             pose_info = None
 
-            if pose_results.pose_landmarks:
+            pose_world_landmarks = getattr(pose_results, "pose_world_landmarks", None)
+            if pose_world_landmarks:
+                pose_info = analizza_postura_3d(
+                    pose_world_landmarks[0], stato["filtri"], config, t
+                )
+                apertura_spalle, inclinazione_spalle, inclinazione_busto, stato_posturale = pose_info
+                stato["ultimo_stato_posturale"] = stato_posturale
+            elif pose_results.pose_landmarks:
                 pose_info = analizza_postura(
                     pose_results.pose_landmarks[0], stato["filtri"], config, t
                 )
@@ -191,6 +213,7 @@ def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config):
                     occhio_sx, occhio_dx,
                     apertura_spalle, inclinazione_spalle,
                     inclinazione_busto, stato_posturale,
+                    valence, arousal, head_yaw, head_pitch, attenzione,
                 ) = classifica_emozione(bs, stato["filtri"], stato, config, t, pose_info)
 
                 adesso = time.time()
@@ -199,11 +222,15 @@ def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config):
                         stato["file_csv"], stato,
                         punteggio, apertura, occhio_sx, occhio_dx,
                         apertura_spalle, inclinazione_spalle, inclinazione_busto,
-                        stato_posturale, emozione,
+                        stato_posturale, valence, arousal, head_yaw, head_pitch,
+                        attenzione, emozione,
                     )
                     stato["ultimo_salvataggio"] = adesso
 
-            disegna_pannello(frame, emozione, punteggio, apertura, stato_posturale, stato)
+            disegna_pannello(
+                frame, emozione, punteggio, apertura, stato_posturale, stato,
+                valence, arousal, attenzione,
+            )
 
             if stato["mostra_debug"] and ultimo_bs:
                 disegna_debug_blendshapes(frame, ultimo_bs)
@@ -233,7 +260,7 @@ def main():
     face_landmarker = crea_face_landmarker(FACE_MODEL_PATH)
     pose_landmarker = crea_pose_landmarker(POSE_MODEL_PATH)
 
-    stato["file_csv"] = prepara_file_csv("dataset_emozioni.csv")
+    stato["file_csv"] = prepara_file_csv(os.path.join(BASE_DIR, "dataset_emozioni.csv"))
     inizializza_csv(stato["file_csv"])
 
     print("\nPremi 'q' o ESC per uscire")

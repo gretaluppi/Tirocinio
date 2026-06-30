@@ -66,6 +66,8 @@ def crea_filtri(config):
     nomi = [
         "punteggio", "apertura", "occhio_sx", "occhio_dx",
         "apertura_spalle", "inclinazione_spalle", "inclinazione_busto",
+        "apertura_spalle_3d", "inclinazione_spalle_3d", "inclinazione_busto_3d",
+        "head_yaw", "head_pitch", "valence", "arousal",
     ]
     return {
         nome: OneEuroFilter(oef["min_cutoff"], oef["beta"], oef["d_cutoff"])
@@ -79,6 +81,10 @@ def crea_filtri(config):
 
 def estrai_blendshapes(face_blendshapes):
     return {bs.category_name: bs.score for bs in face_blendshapes}
+
+
+def limita(valore, minimo, massimo):
+    return max(minimo, min(massimo, valore))
 
 
 # =============================================================================
@@ -144,6 +150,113 @@ def analizza_postura(pose_landmarks, filtri, config, t):
     return ap_s, inc_s, inc_b, stato_posturale
 
 
+def analizza_postura_3d(pose_world_landmarks, filtri, config, t):
+    spalla_sx = pose_world_landmarks[11]
+    spalla_dx = pose_world_landmarks[12]
+    anca_sx = pose_world_landmarks[23]
+    anca_dx = pose_world_landmarks[24]
+    naso = pose_world_landmarks[0]
+
+    def distanza(a, b):
+        return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
+
+    centro_spalle_x = (spalla_sx.x + spalla_dx.x) / 2
+    centro_spalle_y = (spalla_sx.y + spalla_dx.y) / 2
+    centro_spalle_z = (spalla_sx.z + spalla_dx.z) / 2
+    centro_anche_x = (anca_sx.x + anca_dx.x) / 2
+    centro_anche_y = (anca_sx.y + anca_dx.y) / 2
+    centro_anche_z = (anca_sx.z + anca_dx.z) / 2
+
+    apertura_spalle = distanza(spalla_sx, spalla_dx)
+    inclinazione_spalle = math.degrees(math.atan2(spalla_dx.y - spalla_sx.y, spalla_dx.x - spalla_sx.x))
+    dx = centro_spalle_x - centro_anche_x
+    dy = centro_spalle_y - centro_anche_y
+    dz = centro_spalle_z - centro_anche_z
+    inclinazione_busto = math.degrees(math.atan2(math.sqrt(dx * dx + dz * dz), abs(dy) + 1e-6))
+    testa_avanti = max(0.0, naso.z - centro_spalle_z)
+
+    ap_s = filtri["apertura_spalle_3d"].filtra(apertura_spalle, t)
+    inc_s = filtri["inclinazione_spalle_3d"].filtra(abs(inclinazione_spalle), t)
+    inc_b = filtri["inclinazione_busto_3d"].filtra(inclinazione_busto, t)
+
+    sp = config["soglie_postura_3d"]
+    stato_posturale = "POSTURA NEUTRA"
+    if (
+        ap_s < sp["apertura_spalle_chiusa"]
+        or inc_b > sp["inclinazione_busto_chiusa_gradi"]
+        or testa_avanti > sp["testa_avanti_chiusa"]
+    ):
+        stato_posturale = "POSTURA CHIUSA"
+    elif (
+        ap_s > sp["apertura_spalle_aperta"]
+        and inc_s < sp["inclinazione_spalle_aperta_gradi"]
+        and inc_b < sp["inclinazione_busto_aperta_gradi"]
+    ):
+        stato_posturale = "POSTURA APERTA"
+
+    return ap_s, inc_s, inc_b, stato_posturale
+
+
+def stima_head_pose(bs, filtri, config, t):
+    yaw = bs.get("eyeLookOutLeft", 0) - bs.get("eyeLookOutRight", 0)
+    yaw += bs.get("eyeLookInRight", 0) - bs.get("eyeLookInLeft", 0)
+    pitch = bs.get("eyeLookDownLeft", 0) + bs.get("eyeLookDownRight", 0)
+    pitch -= bs.get("eyeLookUpLeft", 0) + bs.get("eyeLookUpRight", 0)
+
+    yaw = filtri["head_yaw"].filtra(yaw, t)
+    pitch = filtri["head_pitch"].filtra(pitch, t)
+    soglie = config["attenzione"]
+    attenzione = (
+        abs(yaw) <= soglie["yaw_massimo"]
+        and abs(pitch) <= soglie["pitch_massimo"]
+    )
+
+    return yaw, pitch, attenzione
+
+
+def calcola_valence_arousal(bs, punteggio, apertura, brow_up, brow_down,
+                            stato_posturale, filtri, config, t):
+    frown = (bs.get("mouthFrownLeft", 0) + bs.get("mouthFrownRight", 0)) / 2
+    smile = punteggio / 100
+    postura = config["circumplex"]["postura"]
+
+    valence = (smile * 2) - 1
+    valence -= brow_down * 0.55
+    valence -= frown * 0.75
+
+    arousal = apertura * 1.6
+    arousal += brow_up * 0.75
+    arousal += brow_down * 0.45
+
+    if stato_posturale == "POSTURA CHIUSA":
+        valence += postura["chiusa_valence"]
+        arousal += postura["chiusa_arousal"]
+    elif stato_posturale == "POSTURA APERTA":
+        valence += postura["aperta_valence"]
+        arousal += postura["aperta_arousal"]
+
+    valence = filtri["valence"].filtra(limita(valence, -1.0, 1.0), t)
+    arousal = filtri["arousal"].filtra(limita(arousal, 0.0, 1.0), t)
+    return valence, arousal
+
+
+def etichetta_da_circumplex(valence, arousal, emozione_rule_based, config):
+    soglie = config["circumplex"]["soglie"]
+
+    if valence >= soglie["valence_positiva"] and arousal <= soglie["arousal_basso"]:
+        return "SERENO"
+    if valence <= soglie["valence_negativa"] and arousal >= soglie["arousal_alto"]:
+        return "TESO"
+    if valence >= soglie["valence_positiva"] and arousal >= soglie["arousal_alto"]:
+        return "MOLTO FELICE" if emozione_rule_based == "MOLTO FELICE" else "FELICE"
+    if emozione_rule_based == "SORPRESO" and arousal >= soglie["arousal_alto"]:
+        return "SORPRESO"
+    if emozione_rule_based == "ARRABBIATO" and valence <= soglie["valence_neutra_bassa"]:
+        return "ARRABBIATO"
+
+    return emozione_rule_based
+
+
 # =============================================================================
 # ISTERESI
 # L'emozione cambia solo se la nuova candidata persiste per un tempo minimo.
@@ -203,7 +316,12 @@ def classifica_emozione(bs, filtri, stato, config, t, pose_info=None):
         elif stato_posturale == "POSTURA APERTA" and emozione == "NEUTRO":
             emozione = "SERENO"
 
+    valence, arousal = calcola_valence_arousal(
+        bs, punteggio, apertura, brow_up, brow_down, stato_posturale, filtri, config, t
+    )
+    emozione = etichetta_da_circumplex(valence, arousal, emozione, config)
     emozione_stabile = applica_isteresi(emozione, stato, config)
+    head_yaw, head_pitch, attenzione = stima_head_pose(bs, filtri, config, t)
 
     return (
         emozione_stabile,
@@ -215,4 +333,9 @@ def classifica_emozione(bs, filtri, stato, config, t, pose_info=None):
         inclinazione_spalle,
         inclinazione_busto,
         stato_posturale,
+        valence,
+        arousal,
+        head_yaw,
+        head_pitch,
+        attenzione,
     )

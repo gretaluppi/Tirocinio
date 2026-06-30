@@ -25,5 +25,32 @@
         "apertura_spalle_aperta": 0.24,
         "inclinazione_spalle_aperta": 0.025,
         "inclinazione_busto_aperta": 0.03
+    },
+    "soglie_postura_3d": {
+        "apertura_spalle_chiusa": 0.24,
+        "inclinazione_busto_chiusa_gradi": 16,
+        "testa_avanti_chiusa": 0.08,
+        "apertura_spalle_aperta": 0.32,
+        "inclinazione_spalle_aperta_gradi": 8,
+        "inclinazione_busto_aperta_gradi": 10
+    },
+    "attenzione": {
+        "yaw_massimo": 0.35,
+        "pitch_massimo": 0.35
+    },
+    "circumplex": {
+        "postura": {
+            "chiusa_valence": -0.12,
+            "chiusa_arousal": 0.18,
+            "aperta_valence": 0.12,
+            "aperta_arousal": -0.08
+        },
+        "soglie": {
+            "valence_positiva": 0.25,
+            "valence_negativa": -0.25,
+            "valence_neutra_bassa": -0.1,
+            "arousal_basso": 0.28,
+            "arousal_alto": 0.45
+        }
     }
 }
