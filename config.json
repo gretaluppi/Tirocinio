@@ -34,9 +34,27 @@
         "inclinazione_spalle_aperta_gradi": 8,
         "inclinazione_busto_aperta_gradi": 10
     },
+    "calibrazione_postura": {
+        "abilitata": true,
+        "durata_secondi": 4.0,
+        "fattore_spalle_chiuse": 0.9,
+        "fattore_spalle_aperte": 1.08,
+        "delta_spalle_aperte_gradi": 4,
+        "delta_busto_chiuso_gradi": 7,
+        "delta_busto_aperto_gradi": 3
+    },
     "attenzione": {
         "yaw_massimo": 0.35,
         "pitch_massimo": 0.35
+    },
+    "realtime": {
+        "abilitato": true,
+        "host": "127.0.0.1",
+        "porta": 8765,
+        "dashboard_dir": "dashboard"
+    },
+    "raccolta_dati": {
+        "etichetta_reale_default": ""
     },
     "circumplex": {
         "postura": {

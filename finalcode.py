@@ -13,12 +13,15 @@ from analisi import (
     classifica_emozione,
     analizza_postura,
     analizza_postura_3d,
+    inizializza_calibrazione_postura,
+    stato_calibrazione_postura,
 )
 from interfaccia import (
     acquisisci_codice_persona_da_camera,
     disegna_pannello,
     disegna_debug_blendshapes,
 )
+from realtime_server import RealtimeServer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FACE_MODEL_PATH = os.path.join(BASE_DIR, "face_landmarker.task")
@@ -31,7 +34,8 @@ INTESTAZIONE_CSV = [
     "occhio_sx", "occhio_dx",
     "apertura_spalle", "inclinazione_spalle", "inclinazione_busto",
     "stato_posturale", "valence", "arousal",
-    "head_yaw", "head_pitch", "attenzione_schermo", "emozione",
+    "head_yaw", "head_pitch", "attenzione_schermo",
+    "calibrazione_postura", "etichetta_reale", "emozione",
 ]
 
 
@@ -52,9 +56,11 @@ def inizializza_stato(config):
         "emozione_confermata": "NEUTRO",
         # postura
         "ultimo_stato_posturale": "POSTURA NEUTRA",
+        "calibrazione_postura": inizializza_calibrazione_postura(config),
         # salvataggio
         "ultimo_salvataggio": 0.0,
         "intervallo_salvataggio": config["salvataggio"]["intervallo"],
+        "etichetta_reale": config.get("raccolta_dati", {}).get("etichetta_reale_default", ""),
         # debug
         "mostra_debug": False,
     }
@@ -134,7 +140,7 @@ def inizializza_csv(file_csv):
 def salva_dati_csv(file_csv, stato, punteggio, apertura, occhio_sx, occhio_dx,
                    apertura_spalle, inclinazione_spalle, inclinazione_busto,
                    stato_posturale, valence, arousal, head_yaw, head_pitch,
-                   attenzione, emozione):
+                   attenzione, calibrazione_stato, emozione):
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
 
     with open(file_csv, mode="a", newline="", encoding="utf-8") as file:
@@ -146,13 +152,43 @@ def salva_dati_csv(file_csv, stato, punteggio, apertura, occhio_sx, occhio_dx,
             round(inclinazione_busto, 4),
             stato_posturale, round(valence, 4), round(arousal, 4),
             round(head_yaw, 4), round(head_pitch, 4),
-            int(bool(attenzione)), emozione,
+            int(bool(attenzione)), calibrazione_stato,
+            stato["etichetta_reale"], emozione,
         ])
+
+
+def crea_payload_realtime(stato, punteggio, apertura, occhio_sx, occhio_dx,
+                          apertura_spalle, inclinazione_spalle, inclinazione_busto,
+                          stato_posturale, valence, arousal, head_yaw, head_pitch,
+                          attenzione, calibrazione_stato, calibrazione_progresso,
+                          emozione):
+    return {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "session_id": stato["session_id"],
+        "codice_persona": stato["codice_persona"],
+        "punteggio_sorriso_0_100": round(punteggio, 2),
+        "apertura_bocca": round(apertura, 4),
+        "occhio_sx": round(occhio_sx, 4),
+        "occhio_dx": round(occhio_dx, 4),
+        "apertura_spalle": round(apertura_spalle, 4),
+        "inclinazione_spalle": round(inclinazione_spalle, 4),
+        "inclinazione_busto": round(inclinazione_busto, 4),
+        "stato_posturale": stato_posturale,
+        "valence": round(valence, 4),
+        "arousal": round(arousal, 4),
+        "head_yaw": round(head_yaw, 4),
+        "head_pitch": round(head_pitch, 4),
+        "attenzione_schermo": bool(attenzione),
+        "calibrazione_postura": calibrazione_stato,
+        "calibrazione_progresso": round(calibrazione_progresso, 4),
+        "etichetta_reale": stato["etichetta_reale"],
+        "emozione": emozione,
+    }
 
 
 # --- LOOP PRINCIPALE ---
 
-def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config):
+def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config, realtime_server=None):
     print("Webcam aperta")
     print("Codice persona:", stato["codice_persona"])
     print("Session ID:", stato["session_id"])
@@ -190,14 +226,21 @@ def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config):
             head_pitch = 0.0
             attenzione = False
             pose_info = None
+            calibrazione_stato, calibrazione_progresso = stato_calibrazione_postura(
+                stato["calibrazione_postura"], t
+            )
 
             pose_world_landmarks = getattr(pose_results, "pose_world_landmarks", None)
             if pose_world_landmarks:
                 pose_info = analizza_postura_3d(
-                    pose_world_landmarks[0], stato["filtri"], config, t
+                    pose_world_landmarks[0], stato["filtri"], config, t,
+                    stato["calibrazione_postura"],
                 )
                 apertura_spalle, inclinazione_spalle, inclinazione_busto, stato_posturale = pose_info
                 stato["ultimo_stato_posturale"] = stato_posturale
+                calibrazione_stato, calibrazione_progresso = stato_calibrazione_postura(
+                    stato["calibrazione_postura"], t
+                )
             elif pose_results.pose_landmarks:
                 pose_info = analizza_postura(
                     pose_results.pose_landmarks[0], stato["filtri"], config, t
@@ -223,13 +266,22 @@ def esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config):
                         punteggio, apertura, occhio_sx, occhio_dx,
                         apertura_spalle, inclinazione_spalle, inclinazione_busto,
                         stato_posturale, valence, arousal, head_yaw, head_pitch,
-                        attenzione, emozione,
+                        attenzione, calibrazione_stato, emozione,
                     )
                     stato["ultimo_salvataggio"] = adesso
 
+            if realtime_server:
+                realtime_server.broadcast(crea_payload_realtime(
+                    stato, punteggio, apertura, occhio_sx, occhio_dx,
+                    apertura_spalle, inclinazione_spalle, inclinazione_busto,
+                    stato_posturale, valence, arousal, head_yaw, head_pitch,
+                    attenzione, calibrazione_stato, calibrazione_progresso,
+                    emozione,
+                ))
+
             disegna_pannello(
                 frame, emozione, punteggio, apertura, stato_posturale, stato,
-                valence, arousal, attenzione,
+                valence, arousal, attenzione, calibrazione_stato, calibrazione_progresso,
             )
 
             if stato["mostra_debug"] and ultimo_bs:
@@ -266,8 +318,22 @@ def main():
     print("\nPremi 'q' o ESC per uscire")
     print("Premi 'd' per mostrare/nascondere i blendshapes\n")
 
+    realtime_server = None
+    if config.get("realtime", {}).get("abilitato", True):
+        realtime_cfg = config["realtime"]
+        dashboard_dir = os.path.join(BASE_DIR, realtime_cfg.get("dashboard_dir", "dashboard"))
+        realtime_server = RealtimeServer(
+            realtime_cfg.get("host", "127.0.0.1"),
+            realtime_cfg.get("porta", 8765),
+            dashboard_dir,
+        )
+        realtime_server.start()
+        print("Dashboard realtime:", realtime_server.url())
+
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     if not cap.isOpened():
+        if realtime_server:
+            realtime_server.stop()
         print("Webcam non disponibile")
         return
 
@@ -275,10 +341,16 @@ def main():
     if not stato["codice_persona"]:
         cap.release()
         cv2.destroyAllWindows()
+        if realtime_server:
+            realtime_server.stop()
         print("Inserimento codice annullato")
         return
 
-    esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config)
+    try:
+        esegui_rilevamento(cap, face_landmarker, pose_landmarker, stato, config, realtime_server)
+    finally:
+        if realtime_server:
+            realtime_server.stop()
 
 
 if __name__ == "__main__":

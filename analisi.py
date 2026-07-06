@@ -87,6 +87,55 @@ def limita(valore, minimo, massimo):
     return max(minimo, min(massimo, valore))
 
 
+def inizializza_calibrazione_postura(config):
+    return {
+        "abilitata": config.get("calibrazione_postura", {}).get("abilitata", True),
+        "durata": config.get("calibrazione_postura", {}).get("durata_secondi", 4.0),
+        "inizio": None,
+        "campioni": [],
+        "baseline": None,
+        "completata": False,
+    }
+
+
+def aggiorna_calibrazione_postura(calibrazione, apertura_spalle, inclinazione_spalle,
+                                  inclinazione_busto, t):
+    if not calibrazione or not calibrazione["abilitata"]:
+        return
+
+    if calibrazione["inizio"] is None:
+        calibrazione["inizio"] = t
+
+    if calibrazione["completata"]:
+        return
+
+    calibrazione["campioni"].append((apertura_spalle, inclinazione_spalle, inclinazione_busto))
+    if t - calibrazione["inizio"] < calibrazione["durata"]:
+        return
+
+    n = len(calibrazione["campioni"])
+    if n == 0:
+        return
+
+    calibrazione["baseline"] = {
+        "apertura_spalle": sum(c[0] for c in calibrazione["campioni"]) / n,
+        "inclinazione_spalle": sum(c[1] for c in calibrazione["campioni"]) / n,
+        "inclinazione_busto": sum(c[2] for c in calibrazione["campioni"]) / n,
+    }
+    calibrazione["completata"] = True
+
+
+def stato_calibrazione_postura(calibrazione, t):
+    if not calibrazione or not calibrazione["abilitata"]:
+        return "DISATTIVATA", 1.0
+    if calibrazione["completata"]:
+        return "COMPLETATA", 1.0
+    if calibrazione["inizio"] is None:
+        return "IN ATTESA", 0.0
+    progresso = limita((t - calibrazione["inizio"]) / calibrazione["durata"], 0.0, 1.0)
+    return "IN CORSO", progresso
+
+
 # =============================================================================
 # METRICHE FACCIALI
 # Legge i blendshapes e li filtra con One Euro Filter.
@@ -150,7 +199,7 @@ def analizza_postura(pose_landmarks, filtri, config, t):
     return ap_s, inc_s, inc_b, stato_posturale
 
 
-def analizza_postura_3d(pose_world_landmarks, filtri, config, t):
+def analizza_postura_3d(pose_world_landmarks, filtri, config, t, calibrazione=None):
     spalla_sx = pose_world_landmarks[11]
     spalla_dx = pose_world_landmarks[12]
     anca_sx = pose_world_landmarks[23]
@@ -179,19 +228,38 @@ def analizza_postura_3d(pose_world_landmarks, filtri, config, t):
     inc_s = filtri["inclinazione_spalle_3d"].filtra(abs(inclinazione_spalle), t)
     inc_b = filtri["inclinazione_busto_3d"].filtra(inclinazione_busto, t)
 
+    aggiorna_calibrazione_postura(calibrazione, ap_s, inc_s, inc_b, t)
+
     sp = config["soglie_postura_3d"]
+    baseline = calibrazione.get("baseline") if calibrazione else None
+    if baseline:
+        cfg_cal = config["calibrazione_postura"]
+        chiusa = (
+            ap_s < baseline["apertura_spalle"] * cfg_cal["fattore_spalle_chiuse"]
+            or inc_b > baseline["inclinazione_busto"] + cfg_cal["delta_busto_chiuso_gradi"]
+            or testa_avanti > sp["testa_avanti_chiusa"]
+        )
+        aperta = (
+            ap_s > baseline["apertura_spalle"] * cfg_cal["fattore_spalle_aperte"]
+            and inc_s < baseline["inclinazione_spalle"] + cfg_cal["delta_spalle_aperte_gradi"]
+            and inc_b < baseline["inclinazione_busto"] + cfg_cal["delta_busto_aperto_gradi"]
+        )
+    else:
+        chiusa = (
+            ap_s < sp["apertura_spalle_chiusa"]
+            or inc_b > sp["inclinazione_busto_chiusa_gradi"]
+            or testa_avanti > sp["testa_avanti_chiusa"]
+        )
+        aperta = (
+            ap_s > sp["apertura_spalle_aperta"]
+            and inc_s < sp["inclinazione_spalle_aperta_gradi"]
+            and inc_b < sp["inclinazione_busto_aperta_gradi"]
+        )
+
     stato_posturale = "POSTURA NEUTRA"
-    if (
-        ap_s < sp["apertura_spalle_chiusa"]
-        or inc_b > sp["inclinazione_busto_chiusa_gradi"]
-        or testa_avanti > sp["testa_avanti_chiusa"]
-    ):
+    if chiusa:
         stato_posturale = "POSTURA CHIUSA"
-    elif (
-        ap_s > sp["apertura_spalle_aperta"]
-        and inc_s < sp["inclinazione_spalle_aperta_gradi"]
-        and inc_b < sp["inclinazione_busto_aperta_gradi"]
-    ):
+    elif aperta:
         stato_posturale = "POSTURA APERTA"
 
     return ap_s, inc_s, inc_b, stato_posturale

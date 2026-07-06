@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emotional Mirroring Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101216;
+      --panel: #181b21;
+      --text: #f2f4f8;
+      --muted: #a8b0bd;
+      --line: #2b3039;
+      --accent: #5fd3a5;
+      --warning: #ffcc66;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .muted { color: var(--muted); }
+
+    .status {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 12px;
+      min-width: 132px;
+      text-align: center;
+      color: var(--warning);
+    }
+
+    .status.ok {
+      color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 108px;
+    }
+
+    .card.wide {
+      grid-column: span 2;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .value {
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.1;
+      overflow-wrap: anywhere;
+    }
+
+    .small {
+      font-size: 16px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .bar {
+      height: 10px;
+      background: #2a2f38;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 16px;
+    }
+
+    .fill {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 120ms linear;
+    }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .grid { grid-template-columns: 1fr; }
+      .card.wide { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Emotional Mirroring</h1>
+        <div class="muted">Dashboard realtime via WebSocket locale</div>
+      </div>
+      <div id="connection" class="status">In attesa</div>
+    </header>
+
+    <section class="grid">
+      <article class="card wide">
+        <div class="label">Emozione</div>
+        <div id="emozione" class="value">-</div>
+        <div id="postura" class="small">Postura: -</div>
+      </article>
+
+      <article class="card">
+        <div class="label">Sorriso</div>
+        <div id="sorriso" class="value">0.0</div>
+        <div class="bar"><div id="sorrisoBar" class="fill"></div></div>
+      </article>
+
+      <article class="card">
+        <div class="label">Attenzione</div>
+        <div id="attenzione" class="value">-</div>
+      </article>
+
+      <article class="card">
+        <div class="label">Valence</div>
+        <div id="valence" class="value">0.00</div>
+        <div class="small">Da -1 a +1</div>
+      </article>
+
+      <article class="card">
+        <div class="label">Arousal</div>
+        <div id="arousal" class="value">0.00</div>
+        <div class="small">Da 0 a 1</div>
+      </article>
+
+      <article class="card">
+        <div class="label">Calibrazione postura</div>
+        <div id="calibrazione" class="value">-</div>
+        <div class="bar"><div id="calibrazioneBar" class="fill"></div></div>
+      </article>
+
+      <article class="card">
+        <div class="label">Sessione</div>
+        <div id="sessione" class="value">-</div>
+        <div id="codice" class="small">ID: -</div>
+      </article>
+
+      <article class="card wide">
+        <div class="label">Sguardo</div>
+        <div id="sguardo" class="value">yaw 0.00 / pitch 0.00</div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function fmt(value, digits = 2) {
+      return Number(value || 0).toFixed(digits);
+    }
+
+    function setBar(id, value) {
+      $(id).style.width = `${Math.max(0, Math.min(100, value))}%`;
+    }
+
+    function connect() {
+      const protocol = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+
+      ws.onopen = () => {
+        $("connection").textContent = "Connesso";
+        $("connection").classList.add("ok");
+      };
+
+      ws.onclose = () => {
+        $("connection").textContent = "Disconnesso";
+        $("connection").classList.remove("ok");
+        setTimeout(connect, 1000);
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        $("emozione").textContent = data.emozione || "-";
+        $("postura").textContent = `Postura: ${data.stato_posturale || "-"}`;
+        $("sorriso").textContent = fmt(data.punteggio_sorriso_0_100, 1);
+        setBar("sorrisoBar", data.punteggio_sorriso_0_100 || 0);
+        $("attenzione").textContent = data.attenzione_schermo ? "Centrata" : "Non centrata";
+        $("valence").textContent = fmt(data.valence, 2);
+        $("arousal").textContent = fmt(data.arousal, 2);
+        $("calibrazione").textContent = data.calibrazione_postura || "-";
+        setBar("calibrazioneBar", (data.calibrazione_progresso || 0) * 100);
+        $("sessione").textContent = data.session_id || "-";
+        $("codice").textContent = `ID: ${data.codice_persona || "-"}`;
+        $("sguardo").textContent = `yaw ${fmt(data.head_yaw, 2)} / pitch ${fmt(data.head_pitch, 2)}`;
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>
