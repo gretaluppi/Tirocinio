@@ -67,7 +67,7 @@ def crea_filtri(config):
         "punteggio", "apertura", "occhio_sx", "occhio_dx",
         "apertura_spalle", "inclinazione_spalle", "inclinazione_busto",
         "apertura_spalle_3d", "inclinazione_spalle_3d", "inclinazione_busto_3d",
-        "head_yaw", "head_pitch", "valence", "arousal",
+        "head_yaw", "head_pitch", "head_roll", "valence", "arousal",
     ]
     return {
         nome: OneEuroFilter(oef["min_cutoff"], oef["beta"], oef["d_cutoff"])
@@ -265,7 +265,72 @@ def analizza_postura_3d(pose_world_landmarks, filtri, config, t, calibrazione=No
     return ap_s, inc_s, inc_b, stato_posturale
 
 
-def stima_head_pose(bs, filtri, config, t):
+def appiattisci_valori(valore):
+    if hasattr(valore, "tolist"):
+        valore = valore.tolist()
+
+    if isinstance(valore, (list, tuple)):
+        risultato = []
+        for elemento in valore:
+            risultato.extend(appiattisci_valori(elemento))
+        return risultato
+
+    return [float(valore)]
+
+
+def dati_matrice_facciale(matrice):
+    if matrice is None:
+        return None
+
+    data = getattr(matrice, "data", None)
+    if data is None and hasattr(matrice, "flatten"):
+        data = matrice.flatten()
+    if data is None:
+        return None
+
+    try:
+        valori = appiattisci_valori(data)
+    except (TypeError, ValueError, NotImplementedError):
+        if hasattr(matrice, "flatten"):
+            valori = appiattisci_valori(matrice.flatten())
+        else:
+            return None
+
+    if len(valori) < 16:
+        return None
+    return valori
+
+
+def stima_head_pose_da_matrice(matrice):
+    valori = dati_matrice_facciale(matrice)
+    if valori is None:
+        return None
+
+    r00, r01, r02 = valori[0], valori[1], valori[2]
+    r10, r11, r12 = valori[4], valori[5], valori[6]
+    r20, r21, r22 = valori[8], valori[9], valori[10]
+
+    yaw = math.degrees(math.atan2(-r20, math.sqrt(r00 * r00 + r10 * r10)))
+    pitch = math.degrees(math.atan2(r21, r22))
+    roll = math.degrees(math.atan2(r10, r00))
+    return yaw, pitch, roll
+
+
+def stima_head_pose(bs, filtri, config, t, matrice_facciale=None):
+    head_pose_matrice = stima_head_pose_da_matrice(matrice_facciale)
+    if head_pose_matrice is not None:
+        yaw, pitch, roll = head_pose_matrice
+        sorgente = "MATRICE"
+        yaw = filtri["head_yaw"].filtra(yaw, t)
+        pitch = filtri["head_pitch"].filtra(pitch, t)
+        roll = filtri["head_roll"].filtra(roll, t)
+        soglie = config["attenzione"]
+        attenzione = (
+            abs(yaw) <= soglie.get("yaw_massimo_gradi", 25)
+            and abs(pitch) <= soglie.get("pitch_massimo_gradi", 20)
+        )
+        return yaw, pitch, roll, attenzione, sorgente
+
     yaw = bs.get("eyeLookOutLeft", 0) - bs.get("eyeLookOutRight", 0)
     yaw += bs.get("eyeLookInRight", 0) - bs.get("eyeLookInLeft", 0)
     pitch = bs.get("eyeLookDownLeft", 0) + bs.get("eyeLookDownRight", 0)
@@ -273,13 +338,14 @@ def stima_head_pose(bs, filtri, config, t):
 
     yaw = filtri["head_yaw"].filtra(yaw, t)
     pitch = filtri["head_pitch"].filtra(pitch, t)
+    roll = filtri["head_roll"].filtra(0.0, t)
     soglie = config["attenzione"]
     attenzione = (
         abs(yaw) <= soglie["yaw_massimo"]
         and abs(pitch) <= soglie["pitch_massimo"]
     )
 
-    return yaw, pitch, attenzione
+    return yaw, pitch, roll, attenzione, "BLENDSHAPES"
 
 
 def calcola_valence_arousal(bs, punteggio, apertura, brow_up, brow_down,
@@ -349,15 +415,27 @@ def applica_isteresi(emozione_nuova, stato, config):
 # CLASSIFICAZIONE EMOZIONE
 # =============================================================================
 
-def classifica_emozione(bs, filtri, stato, config, t, pose_info=None):
+def classifica_emozione(bs, filtri, stato, config, t, pose_info=None, matrice_facciale=None):
     punteggio, apertura, occhio_sx, occhio_dx = stabilizza_metriche(
         bs, filtri, t
     )
 
     brow_up = bs.get("browInnerUp", 0)
     brow_down = (bs.get("browDownLeft", 0) + bs.get("browDownRight", 0)) / 2
+    eye_squint = (bs.get("eyeSquintLeft", 0) + bs.get("eyeSquintRight", 0)) / 2
+    mouth_frown = (bs.get("mouthFrownLeft", 0) + bs.get("mouthFrownRight", 0)) / 2
+    mouth_press = (bs.get("mouthPressLeft", 0) + bs.get("mouthPressRight", 0)) / 2
+    assenza_sorriso = 1.0 - limita(punteggio / 100, 0.0, 1.0)
 
     soglie = config["soglie_emozioni"]
+    pesi_rabbia = soglie["arrabbiato_pesi"]
+    rabbia_score = (
+        brow_down * pesi_rabbia["sopracciglia"]
+        + eye_squint * pesi_rabbia["occhi"]
+        + mouth_press * pesi_rabbia["bocca_serrata"]
+        + mouth_frown * pesi_rabbia["bocca_giu"]
+        + assenza_sorriso * pesi_rabbia["assenza_sorriso"]
+    )
 
     if apertura > soglie["sorpreso_apertura"] and brow_up > soglie["sorpreso_sopracciglia"]:
         emozione = "SORPRESO"
@@ -365,7 +443,7 @@ def classifica_emozione(bs, filtri, stato, config, t, pose_info=None):
         emozione = "MOLTO FELICE"
     elif punteggio > soglie["felice"]:
         emozione = "FELICE"
-    elif brow_down > soglie["arrabbiato_sopracciglia"] and punteggio < soglie["arrabbiato_sorriso"]:
+    elif rabbia_score > soglie["arrabbiato_score"]:
         emozione = "ARRABBIATO"
     else:
         emozione = "NEUTRO"
@@ -389,7 +467,9 @@ def classifica_emozione(bs, filtri, stato, config, t, pose_info=None):
     )
     emozione = etichetta_da_circumplex(valence, arousal, emozione, config)
     emozione_stabile = applica_isteresi(emozione, stato, config)
-    head_yaw, head_pitch, attenzione = stima_head_pose(bs, filtri, config, t)
+    head_yaw, head_pitch, head_roll, attenzione, head_pose_sorgente = stima_head_pose(
+        bs, filtri, config, t, matrice_facciale
+    )
 
     return (
         emozione_stabile,
@@ -405,5 +485,7 @@ def classifica_emozione(bs, filtri, stato, config, t, pose_info=None):
         arousal,
         head_yaw,
         head_pitch,
+        head_roll,
         attenzione,
+        head_pose_sorgente,
     )
