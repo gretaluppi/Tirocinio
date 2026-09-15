@@ -125,24 +125,36 @@ def crea_pose_landmarker(pose_model_path):
 # --- CSV ---
 
 def prepara_file_csv(nome_file):
-    def intestazione_compatibile(path):
-        if not os.path.isfile(path):
-            return True
-        with open(path, mode="r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            return next(reader, []) == INTESTAZIONE_CSV
-
-    if intestazione_compatibile(nome_file):
+    if not os.path.isfile(nome_file):
         return nome_file
 
-    base, estensione = os.path.splitext(nome_file)
-    for indice in range(2, 100):
-        candidato = f"{base}_v{indice}{estensione}"
-        if intestazione_compatibile(candidato):
-            print(f"CSV esistente con struttura diversa. Nuovi dati in: {candidato}")
-            return candidato
+    with open(nome_file, mode="r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        intestazione_corrente = reader.fieldnames or []
+        righe = list(reader)
 
-    raise RuntimeError("Impossibile trovare un nome CSV compatibile.")
+    if intestazione_corrente == INTESTAZIONE_CSV:
+        return nome_file
+
+    backup = nome_file + ".bak"
+    if not os.path.isfile(backup):
+        with open(backup, mode="w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=intestazione_corrente)
+            writer.writeheader()
+            writer.writerows(righe)
+
+    with open(nome_file, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=INTESTAZIONE_CSV)
+        writer.writeheader()
+        for riga in righe:
+            writer.writerow({
+                colonna: riga.get(colonna, "")
+                for colonna in INTESTAZIONE_CSV
+            })
+
+    print("CSV aggiornato allo schema corrente:", nome_file)
+    print("Backup del CSV precedente:", backup)
+    return nome_file
 
 
 def inizializza_csv(file_csv):

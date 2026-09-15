@@ -1,4 +1,3 @@
-﻿timestamp,session_id,codice_persona,punteggio_sorriso_0_100,apertura_bocca,occhio_sx,occhio_dx,apertura_spalle,inclinazione_spalle,inclinazione_busto,stato_posturale,valence,arousal,head_yaw,head_pitch,head_roll,head_pose_sorgente,attenzione_schermo,calibrazione_postura,etichetta_reale,emozione
 2026-09-15T16:11:01,1fc5fcaf,01,0.02,0.0068,0.8135,0.9456,0.3151,179.7037,14.3758,POSTURA NEUTRA,-1.0,0.1079,-3.5647,7.3862,-2.6255,MATRICE,1,IN CORSO,,NEUTRO
 2026-09-15T16:11:01,1fc5fcaf,01,0.0,0.0089,0.7646,0.8332,0.3272,179.7351,15.7521,POSTURA NEUTRA,-1.0,0.234,-2.9383,5.9139,-2.736,MATRICE,1,IN CORSO,,NEUTRO
 2026-09-15T16:11:02,1fc5fcaf,01,0.0,0.0091,0.9216,0.9625,0.3287,179.5358,16.0578,POSTURA CHIUSA,-1.0,0.1873,-2.7883,6.2283,-2.5809,MATRICE,1,IN CORSO,,ARRABBIATO

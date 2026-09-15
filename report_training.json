@@ -1,0 +1,168 @@
+{
+    "dataset": "C:\\Users\\mular\\OneDrive\\Desktop\\Tirocinio\\dataset_emozioni.csv",
+    "righe_totali_usate": 418,
+    "persone": [
+        "01",
+        "02"
+    ],
+    "split_usato": "group_split_per_persona",
+    "avvisi": [
+        "Numero di soggetti limitato: nella relazione descrivere il risultato come studio pilota/esplorativo."
+    ],
+    "distribuzione_etichette": {
+        "NEUTRO": 63,
+        "FELICE": 50,
+        "MOLTO FELICE": 60,
+        "SORPRESO": 85,
+        "ARRABBIATO": 48,
+        "TESO": 52,
+        "SERENO": 60
+    },
+    "feature": [
+        "punteggio_sorriso_0_100",
+        "apertura_bocca",
+        "occhio_sx",
+        "occhio_dx",
+        "apertura_spalle",
+        "inclinazione_spalle",
+        "inclinazione_busto",
+        "valence",
+        "arousal",
+        "head_yaw",
+        "head_pitch",
+        "head_roll",
+        "attenzione_schermo"
+    ],
+    "accuracy": 0.18636363636363637,
+    "classification_report": {
+        "ARRABBIATO": {
+            "precision": 0.05,
+            "recall": 0.04,
+            "f1-score": 0.044444444444444446,
+            "support": 25.0
+        },
+        "FELICE": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1-score": 0.0,
+            "support": 25.0
+        },
+        "MOLTO FELICE": {
+            "precision": 0.4782608695652174,
+            "recall": 0.7586206896551724,
+            "f1-score": 0.5866666666666667,
+            "support": 29.0
+        },
+        "NEUTRO": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1-score": 0.0,
+            "support": 39.0
+        },
+        "SERENO": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1-score": 0.0,
+            "support": 29.0
+        },
+        "SORPRESO": {
+            "precision": 1.0,
+            "recall": 0.09615384615384616,
+            "f1-score": 0.17543859649122806,
+            "support": 52.0
+        },
+        "TESO": {
+            "precision": 0.10236220472440945,
+            "recall": 0.6190476190476191,
+            "f1-score": 0.17567567567567569,
+            "support": 21.0
+        },
+        "accuracy": 0.18636363636363637,
+        "macro avg": {
+            "precision": 0.2329461534699467,
+            "recall": 0.2162603078366625,
+            "f1-score": 0.14031791189685924,
+            "support": 220.0
+        },
+        "weighted avg": {
+            "precision": 0.31485987053001774,
+            "recall": 0.18636363636363637,
+            "f1-score": 0.1406201847780795,
+            "support": 220.0
+        }
+    },
+    "confusion_matrix": [
+        [
+            1,
+            0,
+            0,
+            0,
+            3,
+            0,
+            21
+        ],
+        [
+            0,
+            0,
+            13,
+            0,
+            1,
+            0,
+            11
+        ],
+        [
+            5,
+            1,
+            22,
+            0,
+            1,
+            0,
+            0
+        ],
+        [
+            4,
+            0,
+            0,
+            0,
+            5,
+            0,
+            30
+        ],
+        [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            29
+        ],
+        [
+            2,
+            1,
+            11,
+            0,
+            10,
+            5,
+            23
+        ],
+        [
+            8,
+            0,
+            0,
+            0,
+            0,
+            0,
+            13
+        ]
+    ],
+    "classi": [
+        "ARRABBIATO",
+        "FELICE",
+        "MOLTO FELICE",
+        "NEUTRO",
+        "SERENO",
+        "SORPRESO",
+        "TESO"
+    ]
+}
