@@ -3,27 +3,15 @@ import json
 import os
 from collections import Counter
 
+from schema_dati import MODEL_FEATURES
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_PATH = os.path.join(BASE_DIR, "dataset_emozioni.csv")
 MODEL_PATH = os.path.join(BASE_DIR, "modello_emozioni.pkl")
 REPORT_PATH = os.path.join(BASE_DIR, "report_training.json")
 
-FEATURES = [
-    "punteggio_sorriso_0_100",
-    "apertura_bocca",
-    "occhio_sx",
-    "occhio_dx",
-    "apertura_spalle",
-    "inclinazione_spalle",
-    "inclinazione_busto",
-    "valence",
-    "arousal",
-    "head_yaw",
-    "head_pitch",
-    "head_roll",
-    "attenzione_schermo",
-]
+FEATURES = MODEL_FEATURES
 
 
 def importa_dipendenze_ml():
@@ -51,9 +39,16 @@ def importa_dipendenze_ml():
 
 
 def trova_dataset():
-    if not os.path.isfile(DATASET_PATH):
-        raise FileNotFoundError(f"Dataset non trovato: {DATASET_PATH}")
-    return DATASET_PATH
+    candidati = []
+    for cartella, _, nomi in os.walk(BASE_DIR):
+        candidati.extend(
+            os.path.join(cartella, nome)
+            for nome in nomi
+            if nome.startswith("dataset_emozioni") and nome.endswith(".csv")
+        )
+    if not candidati:
+        raise FileNotFoundError("Nessun dataset_emozioni*.csv trovato.")
+    return max(candidati, key=os.path.getmtime)
 
 
 def leggi_dataset(path):
@@ -155,6 +150,9 @@ def main():
             "Un solo soggetto disponibile: il test misura solo coerenza interna, non generalizzazione su persone nuove."
         )
 
+    if len(set(y_train)) < 2:
+        raise SystemExit("Il gruppo di training contiene una sola classe: raccogli dati piu' bilanciati.")
+
     modello = RandomForestClassifier(
         n_estimators=200,
         random_state=42,
@@ -172,13 +170,14 @@ def main():
         "avvisi": avvisi,
         "distribuzione_etichette": dict(Counter(y)),
         "feature": FEATURES,
+        "feature_description": "52 blendshape MediaPipe, salvati direttamente senza metriche derivate.",
         "accuracy": accuracy_score(y_test, predizioni),
         "classification_report": classification_report(y_test, predizioni, output_dict=True, zero_division=0),
         "confusion_matrix": confusion_matrix(y_test, predizioni).tolist(),
         "classi": sorted(set(y)),
     }
 
-    dump({"model": modello, "features": FEATURES}, MODEL_PATH)
+    dump({"model": modello, "features": FEATURES, "schema_version": 2}, MODEL_PATH)
     with open(REPORT_PATH, "w", encoding="utf-8") as file:
         json.dump(report, file, indent=4, ensure_ascii=False)
 

@@ -155,6 +155,7 @@
         <div class="label">Emozione</div>
         <div id="emozione" class="value">-</div>
         <div id="postura" class="small">Postura: -</div>
+        <div id="sorgenteEmozione" class="small">Classificazione: -</div>
       </article>
 
       <article class="card">
@@ -282,6 +283,11 @@
         const data = JSON.parse(event.data);
         $("emozione").textContent = data.emozione || "-";
         $("postura").textContent = `Postura: ${data.stato_posturale || "-"}`;
+        const fonte = data.sorgente_emozione || "-";
+        const confidenza = Number(data.confidenza_modello || 0);
+        $("sorgenteEmozione").textContent = fonte === "ML"
+          ? `Classificazione: ML (${Math.round(confidenza * 100)}%)`
+          : `Classificazione: ${fonte}`;
         $("sorriso").textContent = fmt(data.punteggio_sorriso_0_100, 1);
         setBar("sorrisoBar", data.punteggio_sorriso_0_100 || 0);
         $("attenzione").textContent = data.attenzione_schermo ? "Centrata" : "Non centrata";

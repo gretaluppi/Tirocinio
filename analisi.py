@@ -354,13 +354,14 @@ def calcola_valence_arousal(bs, punteggio, apertura, brow_up, brow_down,
     smile = punteggio / 100
     postura = config["circumplex"]["postura"]
 
-    valence = (smile * 2) - 1
-    valence -= brow_down * 0.55
-    valence -= frown * 0.75
+    pesi = config["circumplex"]["pesi"]
+    valence = (smile * pesi["sorriso"]) - 1
+    valence -= brow_down * pesi["sopracciglia_basse"]
+    valence -= frown * pesi["bocca_triste"]
 
-    arousal = apertura * 1.6
-    arousal += brow_up * 0.75
-    arousal += brow_down * 0.45
+    arousal = apertura * pesi["bocca_aperta"]
+    arousal += brow_up * pesi["sopracciglia_alte"]
+    arousal += brow_down * pesi["sopracciglia_basse_arousal"]
 
     if stato_posturale == "POSTURA CHIUSA":
         valence += postura["chiusa_valence"]
@@ -397,9 +398,9 @@ def etichetta_da_circumplex(valence, arousal, emozione_rule_based, config):
 # Evita oscillazioni rapide tra etichette vicine.
 # =============================================================================
 
-def applica_isteresi(emozione_nuova, stato, config):
+def applica_isteresi(emozione_nuova, stato, config, t=None):
     durata = config["isteresi"]["durata_minima"]
-    adesso = time.time()
+    adesso = time.time() if t is None else t
 
     if emozione_nuova != stato["emozione_candidata"]:
         stato["emozione_candidata"] = emozione_nuova
@@ -415,7 +416,8 @@ def applica_isteresi(emozione_nuova, stato, config):
 # CLASSIFICAZIONE EMOZIONE
 # =============================================================================
 
-def classifica_emozione(bs, filtri, stato, config, t, pose_info=None, matrice_facciale=None):
+def classifica_emozione(bs, filtri, stato, config, t, pose_info=None,
+                        matrice_facciale=None, predizione_ml=None):
     punteggio, apertura, occhio_sx, occhio_dx = stabilizza_metriche(
         bs, filtri, t
     )
@@ -466,7 +468,17 @@ def classifica_emozione(bs, filtri, stato, config, t, pose_info=None, matrice_fa
         bs, punteggio, apertura, brow_up, brow_down, stato_posturale, filtri, config, t
     )
     emozione = etichetta_da_circumplex(valence, arousal, emozione, config)
-    emozione_stabile = applica_isteresi(emozione, stato, config)
+    sorgente_emozione = "EURISTICA"
+    confidenza_modello = 0.0
+    if predizione_ml is not None:
+        etichetta_ml, confidenza_modello = predizione_ml
+        if confidenza_modello >= config["ml"]["confidenza_minima"]:
+            emozione = etichetta_ml
+            sorgente_emozione = "ML"
+        else:
+            sorgente_emozione = "EURISTICA_CONFIDENZA_ML_BASSA"
+
+    emozione_stabile = applica_isteresi(emozione, stato, config, t)
     head_yaw, head_pitch, head_roll, attenzione, head_pose_sorgente = stima_head_pose(
         bs, filtri, config, t, matrice_facciale
     )
@@ -488,4 +500,6 @@ def classifica_emozione(bs, filtri, stato, config, t, pose_info=None, matrice_fa
         head_roll,
         attenzione,
         head_pose_sorgente,
+        sorgente_emozione,
+        confidenza_modello,
     )

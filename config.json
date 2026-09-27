@@ -60,7 +60,8 @@
         "pitch_massimo_gradi": 20
     },
     "privacy": {
-        "richiedi_consenso": true
+        "richiedi_consenso": true,
+        "conservazione_giorni": 30
     },
     "realtime": {
         "abilitato": true,
@@ -68,7 +69,12 @@
         "porta": 8765,
         "dashboard_dir": "dashboard"
     },
+    "interfaccia": {
+        "mostra_finestra_locale": true
+    },
     "raccolta_dati": {
+        "directory": "dati",
+        "scrivi_parquet": true,
         "etichetta_reale_default": "",
         "modalita_training": true,
         "etichette_training": {
@@ -83,6 +89,14 @@
         }
     },
     "circumplex": {
+        "pesi": {
+            "sorriso": 2.0,
+            "sopracciglia_basse": 0.55,
+            "bocca_triste": 0.75,
+            "bocca_aperta": 1.6,
+            "sopracciglia_alte": 0.75,
+            "sopracciglia_basse_arousal": 0.45
+        },
         "postura": {
             "chiusa_valence": -0.12,
             "chiusa_arousal": 0.18,
@@ -96,5 +110,10 @@
             "arousal_basso": 0.28,
             "arousal_alto": 0.45
         }
+    },
+    "ml": {
+        "abilitato": false,
+        "file_modello": "modello_emozioni.pkl",
+        "confidenza_minima": 0.55
     }
 }
